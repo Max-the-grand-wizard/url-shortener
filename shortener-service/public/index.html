@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>URL Shortener</title>
+  <style>
+    body {
+      font-family: system-ui, sans-serif;
+      max-width: 640px;
+      margin: 60px auto;
+      padding: 0 20px;
+      color: #222;
+    }
+    h1 { margin-bottom: 4px; }
+    p.sub { color: #666; margin-top: 0; }
+    .row { display: flex; gap: 8px; margin: 16px 0; }
+    input[type=text] {
+      flex: 1;
+      padding: 10px;
+      font-size: 15px;
+      border: 1px solid #ccc;
+      border-radius: 6px;
+    }
+    button {
+      padding: 10px 18px;
+      font-size: 15px;
+      border: 0;
+      border-radius: 6px;
+      background: #2563eb;
+      color: white;
+      cursor: pointer;
+    }
+    button:hover { background: #1e4fd1; }
+    .result {
+      background: #f3f4f6;
+      border-radius: 6px;
+      padding: 14px;
+      margin-top: 10px;
+      display: none;
+    }
+    .result.show { display: block; }
+    .result a { font-weight: 600; color: #2563eb; word-break: break-all; }
+    .error { color: #b91c1c; margin-top: 8px; min-height: 20px; }
+    .section { margin-top: 40px; border-top: 1px solid #eee; padding-top: 20px; }
+    .deleteBtn {
+      margin-left: 8px;
+      padding: 4px 10px;
+      font-size: 13px;
+      background: #dc2626;
+    }
+    .deleteBtn:hover { background: #b91c1c; }
+  </style>
+</head>
+<body>
+  <h1>URL Shortener</h1>
+  <p class="sub">Paste a long URL and get a short one.</p>
+
+  <div class="row">
+    <input id="urlInput" type="text" placeholder="https://example.com/some/long/link" />
+    <button id="shortenBtn">Shorten</button>
+  </div>
+  <div class="error" id="errorMsg"></div>
+
+  <div class="result" id="result">
+    <div>Your short link:</div>
+    <div style="margin-top:6px">
+      <a id="shortLink" href="#" target="_blank"></a>
+    </div>
+  </div>
+
+  <div class="section">
+    <h2 style="font-size:18px;margin:0 0 12px">Search saved links</h2>
+    <div class="row">
+      <input id="searchInput" type="text" placeholder="e.g. github" />
+      <button id="searchBtn">Search</button>
+    </div>
+    <ul id="searchResults" style="padding-left:18px"></ul>
+  </div>
+
+  <script>
+    const urlInput = document.getElementById('urlInput');
+    const shortenBtn = document.getElementById('shortenBtn');
+    const errorMsg = document.getElementById('errorMsg');
+    const result = document.getElementById('result');
+    const shortLink = document.getElementById('shortLink');
+
+    shortenBtn.addEventListener('click', async () => {
+      errorMsg.textContent = '';
+      result.classList.remove('show');
+      const url = urlInput.value.trim();
+      if (!url) {
+        errorMsg.textContent = 'Please paste a URL first.';
+        return;
+      }
+      try {
+        const res = await fetch('/shorten', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          errorMsg.textContent = data.error || 'Something went wrong.';
+          return;
+        }
+        const fullUrl = `${location.origin}${data.shortUrl}`;
+        shortLink.href = data.shortUrl;
+        shortLink.textContent = fullUrl;
+        result.classList.add('show');
+      } catch (err) {
+        errorMsg.textContent = 'Could not reach the server.';
+      }
+    });
+
+    // Search
+    const searchInput = document.getElementById('searchInput');
+    const searchBtn = document.getElementById('searchBtn');
+    const searchResults = document.getElementById('searchResults');
+
+    searchBtn.addEventListener('click', async () => {
+      searchResults.innerHTML = '';
+      const q = searchInput.value.trim();
+      if (!q) return;
+      try {
+        const res = await fetch(`/search?q=${encodeURIComponent(q)}`);
+        const rows = await res.json();
+        if (!res.ok) {
+          searchResults.innerHTML = `<li>${rows.error || 'Error'}</li>`;
+          return;
+        }
+        if (rows.length === 0) {
+          searchResults.innerHTML = '<li>No results.</li>';
+          return;
+        }
+        for (const row of rows) {
+          const li = document.createElement('li');
+          li.innerHTML = `
+            <a href="/r/${row.code}" target="_blank">/r/${row.code}</a>
+            → ${row.original_url}
+            <button class="deleteBtn" data-code="${row.code}">Delete</button>
+          `;
+          searchResults.appendChild(li);
+        }
+      } catch (err) {
+        searchResults.innerHTML = '<li>Could not reach the server.</li>';
+      }
+    });
+
+    // Delete button handler (event delegation — works for dynamically added buttons)
+    searchResults.addEventListener('click', async (e) => {
+      if (!e.target.classList.contains('deleteBtn')) return;
+      const code = e.target.dataset.code;
+      if (!confirm(`Delete short link /r/${code}?`)) return;
+
+      try {
+        const res = await fetch(`/urls/${code}`, { method: 'DELETE' });
+        if (res.ok) {
+          e.target.closest('li').remove();
+        } else {
+          const data = await res.json();
+          alert(data.error || 'Delete failed');
+        }
+      } catch (err) {
+        alert('Could not reach the server.');
+      }
+    });
+  </script>
+</body>
+</html>
